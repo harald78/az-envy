@@ -29,7 +29,6 @@ const int   daylightOffset_sec = 3600; // Sommerzeit Offset (1 Stunde)
 void connectToWiFi() {
     Serial.print("Verbinde mit ");
     Serial.println(ssid);
-
     WiFi.begin(ssid, password);
 
     while (WiFi.status() != WL_CONNECTED) {
