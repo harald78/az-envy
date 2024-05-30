@@ -49,4 +49,28 @@ Connect the 6 pins of the ESP8266-12F to FT232-AZ
 
 ![Compile and start flashing](images/Arduino-IDE.png)
 
+## Starting a new sketch in Arduino IDE
+
+Every sketch must be in an own folder to work with ArduinoIDE. The file extension is .ino
+
+## Installing libraries
+
+Necessary libraries for this project are:
+
+- ClosedCube_SHT31_D
+- ArdunioJSON
+- ArduinoUniqueID
+
+You must install these libraries via the library button on the left side of the ArduinoIDE
+
+## Known Issue with SHT_31_D Library
+
+When trying to compile (verify) the project the first time a failure occurs. 
+This is a known issue with the library [SHT31_D Issue #5](https://github.com/closedcube/ClosedCube_SHT31D_Arduino/issues/5).
+
+To fix it open the installed library folder in a C++ IDE of your choice and edit the
+ClosedCube_SHT31_D.cpp file. Just add the missing `return` statement in line 55:
+`return returnError(error)`. Save the file and then you can compile and flash the project
+to your AZ-Envy.
+
 
