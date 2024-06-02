@@ -99,11 +99,25 @@ void sendSensorData() {
     String uniqueID = getUniqueID();
 
     StaticJsonDocument<200> doc;
-    doc["temperature"] = String(temperature, 1);
-    doc["humidity"] = String(humidity, 1);
-    doc["voc"] = voc;
+    doc["base"] = "AZEnvy";
     doc["timestamp"] = timestamp;
     doc["id"] = uniqueID;
+    JsonObject measurements = doc.createNestedObject("measurements");
+    JsonObject temperature = doc.createNestedObject();
+
+    temperature["type"] = "TEMPERATURE";
+    temperature["value"] = String(temperature, 1);
+    temperature["unit"] = "CELSIUS";
+
+    JsonObject humidity = doc.createNestedObject();
+    humidity["type"] = "HUMIDITY";
+    humidity["value"] = String(humidity, 1);
+    humidity["unit"] = "PERCENT";
+
+    JsonObject gas = doc.createNestedObject();
+    gas["type"] = "GAS";
+    gas["value"] = voc;
+    gas["unit"] = "PARTICLE";
 
     String payload;
     serializeJson(doc, payload);
