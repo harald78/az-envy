@@ -9,7 +9,7 @@
 ClosedCube_SHT31D sht3xd;
 
 const char* host = "HOST-IP";
-const uint16_t port = 3001;  // Port auf 3001 geändert
+const uint16_t port = 8080;  // Port auf 8080 geändert
 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 3600; // MEZ Offset (1 Stunde)
@@ -102,22 +102,23 @@ void sendSensorData() {
     doc["base"] = "AZEnvy";
     doc["timestamp"] = timestamp;
     doc["id"] = uniqueID;
-    JsonObject measurements = doc.createNestedObject("measurements");
-    JsonObject temperature = doc.createNestedObject();
 
-    temperature["type"] = "TEMPERATURE";
-    temperature["value"] = String(temperature, 1);
-    temperature["unit"] = "CELSIUS";
+    JsonObject measurements = doc["measurements"].to<JsonObject>();
 
-    JsonObject humidity = doc.createNestedObject();
-    humidity["type"] = "HUMIDITY";
-    humidity["value"] = String(humidity, 1);
-    humidity["unit"] = "PERCENT";
+    JsonObject temperatureJson = measurements.createNestedObject("temperature");
+    temperatureJson["type"] = "TEMPERATURE";
+    temperatureJson["value"] = String(temperature, 1);
+    temperatureJson["unit"] = "CELSIUS";
 
-    JsonObject gas = doc.createNestedObject();
-    gas["type"] = "GAS";
-    gas["value"] = voc;
-    gas["unit"] = "PARTICLE";
+    JsonObject humidityJson = measurements.createNestedObject("humidity");
+    humidityJson["type"] = "HUMIDITY";
+    humidityJson["value"] = String(humidity, 1);
+    humidityJson["unit"] = "PERCENT";
+
+    JsonObject gasJson = measurements.createNestedObject("gas");
+    gasJson["type"] = "GAS";
+    gasJson["value"] = voc;
+    gasJson["unit"] = "PARTICLE";
 
     String payload;
     serializeJson(doc, payload);

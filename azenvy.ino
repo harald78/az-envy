@@ -21,7 +21,7 @@ const char* PASSWORD = "WIFI-PASSWORD";
 
 // Server-Konfiguration
 const char* HOST = "HOST-IP";
-const uint16_t PORT = 3001;
+const uint16_t PORT = 8080;
 
 // User-Konfiguration
 const char* username = "default";
@@ -77,17 +77,22 @@ String getUniqueID() {
 }
 
 // Funktion zur Durchführung einer HTTP-Anfrage
-int performHttpRequest(HTTPClient& http, const String& url, const String& payload) {
+int performHttpRequest(const String& url, StaticJsonDocument<200>& doc) {
     WiFiClient client;
+    HTTPClient http;
     http.begin(client, url);
-    http.addHeader(APPLICATION_JSON, APPLICATION_JSON);
+    http.addHeader("Content-Type", APPLICATION_JSON);
+
+    String payload;
+    serializeJson(doc, payload);
+
     int httpResponseCode = http.POST(payload);
 
     Serial.println("-- Endpunkt URL --");
     Serial.println(url);
     Serial.println("-- Payload --");
-    Serial.println(payload);
-    Serial.println("-- Response --");
+    serializeJsonPretty(doc, Serial);
+    Serial.println("\n-- Response --");
 
     if (httpResponseCode > 0) {
         String response = http.getString();
@@ -108,15 +113,11 @@ int performHttpRequest(HTTPClient& http, const String& url, const String& payloa
 // Funktion zur Bestätigung der Sensorregistrierung
 void confirmSensorRegistration() {
     if (WiFi.status() == WL_CONNECTED) {
-        StaticJsonDocument<200> jsonDoc;
-        jsonDoc["username"] = username;
-        jsonDoc["uuid"] = getUniqueID();
+        StaticJsonDocument<200> doc;
+        doc["username"] = username;
+        doc["uuid"] = getUniqueID();
 
-        String payload;
-        serializeJson(jsonDoc, payload);
-
-        HTTPClient http;
-        performHttpRequest(http, URL_REGISTER_SENSOR_CONFIRM, payload);
+        performHttpRequest(URL_REGISTER_SENSOR_CONFIRM, doc);
     }
 }
 
@@ -131,17 +132,28 @@ void sendSensorData() {
     String uniqueID = getUniqueID();
 
     StaticJsonDocument<200> doc;
-    doc["temperature"] = String(temperature, 1);
-    doc["humidity"] = String(humidity, 1);
-    doc["voc"] = voc;
+    doc["base"] = "AZEnvy";
     doc["timestamp"] = timestamp;
     doc["id"] = uniqueID;
 
-    String payload;
-    serializeJson(doc, payload);
+    JsonObject measurements = doc["measurements"].to<JsonObject>();
 
-    HTTPClient http;
-    performHttpRequest(http, URL_MEASUREMENTS, payload);
+    JsonObject temperatureJson = measurements.createNestedObject("temperature");
+    temperatureJson["type"] = "TEMPERATURE";
+    temperatureJson["value"] = String(temperature, 1);
+    temperatureJson["unit"] = "CELSIUS";
+
+    JsonObject humidityJson = measurements.createNestedObject("humidity");
+    humidityJson["type"] = "HUMIDITY";
+    humidityJson["value"] = String(humidity, 1);
+    humidityJson["unit"] = "PERCENT";
+
+    JsonObject gasJson = measurements.createNestedObject("gas");
+    gasJson["type"] = "GAS";
+    gasJson["value"] = voc;
+    gasJson["unit"] = "PARTICLE";
+
+    performHttpRequest(URL_MEASUREMENTS, doc);
 }
 
 void setup() {
