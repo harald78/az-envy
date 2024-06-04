@@ -20,7 +20,6 @@ Management URL http://arduino.esp8266.com/stable/package_esp8266com_index.json u
 
 ![Preferences](images/Arduino-Preferences.png)
 
-
 ### Connecting ESP8266-12F to FT232-AZ
 
 Connect the 6 pins of the ESP8266-12F to FT232-AZ

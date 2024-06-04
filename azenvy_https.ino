@@ -1,25 +1,48 @@
 #include <ESP8266WiFi.h>
 #include <Wire.h>
 #include <ClosedCube_SHT31D.h>
-#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <time.h>
 #include <ArduinoJson.h>
 #include <ArduinoUniqueID.h>
 
+// SSL Functions and Variables
+#include "SSLClient.cpp"
+
 ClosedCube_SHT31D sht3xd;
 
-const char* host = "HOST-IP";
-const uint16_t port = 8080;  // Port auf 8080 geändert
+// Konstanten
+const char* APPLICATION_JSON = "application/json";
+const char* NTP_SERVER = "pool.ntp.org";
+const long GMT_OFFSET_SEC = 3600;
+const int DAYLIGHT_OFFSET_SEC = 3600;
 
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 3600; // MEZ Offset (1 Stunde)
-const int   daylightOffset_sec = 3600; // Sommerzeit Offset (1 Stunde)
+// WiFi-Konfiguration
+const char* WIFI_PROVIDER = "WPS"; // WPS oder SSID
+const char* SSID = "WIFI-SSID";
+const char* PASSWORD = "WIFI-PASSWORD";
 
-// Funktion zur Verbindung mit dem WiFi mithilfe von WPS
+// Server-Konfiguration
+const char* HOST = "HOST-IP"; // Change to your host
+const uint16_t PORT = 443; // HTTPS port
+
+// User-Konfiguration
+const char* username = "default";
+
+// API-Konfiguration
+const String URL_REGISTER_SENSOR_CONFIRM = String("/api/register/sensor/confirm");
+const String URL_MEASUREMENTS = String("/api/measurements");
+
+// Funktion zur Verbindung mit dem WiFi
 void connectToWiFi() {
-    Serial.println("Starte WPS-Verbindung...");
-    WiFi.beginWPSConfig();
-    delay(500);
+    if (strcmp(WIFI_PROVIDER, "WPS") == 0) {
+        Serial.println("Starte WPS-Verbindung...");
+        WiFi.beginWPSConfig();
+    } else {
+        Serial.print("Verbinde mit ");
+        Serial.println(SSID);
+        WiFi.begin(SSID, PASSWORD);
+    }
 
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
@@ -32,7 +55,7 @@ void connectToWiFi() {
     Serial.println(WiFi.localIP());
 
     // Initialisiere NTP
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
 }
 
 // Funktion zur Formatierung der aktuellen Zeit
@@ -56,35 +79,45 @@ String getUniqueID() {
     return String(uniqueID);
 }
 
+// Funktion zur Durchführung einer HTTPS-Anfrage
+int performHttpsRequest(const String& url, StaticJsonDocument<200>& doc) {
+    if (connectToServer(HOST, PORT)) {
+        client.println("POST " + url + " HTTP/1.1");
+        client.println("Host: " + String(HOST));
+        client.println("Content-Type: " + String(APPLICATION_JSON));
+        client.print("Content-Length: ");
+        client.println(measureJson(doc));
+        client.println();
+
+        String payload;
+        serializeJson(doc, payload);
+        client.println(payload);
+
+        String response = readResponse();
+
+        Serial.println("-- Endpunkt URL --");
+        Serial.println(url);
+        Serial.println("-- Payload --");
+        serializeJsonPretty(doc, Serial);
+        Serial.println("\n-- Response --");
+
+        Serial.println(response);
+
+        return 200; // Simplified for demonstration. You can parse the actual response code from the response string.
+    } else {
+        Serial.println("Fehler beim Verbinden mit dem Server.");
+        return -1;
+    }
+}
+
 // Funktion zur Bestätigung der Sensorregistrierung
 void confirmSensorRegistration() {
     if (WiFi.status() == WL_CONNECTED) {
-        HTTPClient http;
-        WiFiClient client;
-        String url = "http://" + String(host) + ":" + String(port) + "/register/confirm";
-        http.begin(client, url);
+        StaticJsonDocument<200> doc;
+        doc["username"] = username;
+        doc["uuid"] = getUniqueID();
 
-        http.addHeader("Content-Type", "application/json");
-
-        StaticJsonDocument<200> jsonDoc;
-        jsonDoc["username"] = "your-username"; // Füge hier den tatsächlichen Benutzernamen ein
-        jsonDoc["uuid"] = getUniqueID();
-
-        String requestBody;
-        serializeJson(jsonDoc, requestBody);
-
-        int httpResponseCode = http.POST(requestBody);
-
-        if (httpResponseCode > 0) {
-            String response = http.getString();
-            Serial.println(httpResponseCode);
-            Serial.println(response);
-        } else {
-            Serial.print("Fehler beim Senden des POST: ");
-            Serial.println(httpResponseCode);
-        }
-
-        http.end();
+        performHttpsRequest(URL_REGISTER_SENSOR_CONFIRM, doc);
     }
 }
 
@@ -120,28 +153,7 @@ void sendSensorData() {
     gasJson["value"] = voc;
     gasJson["unit"] = "PARTICLE";
 
-    String payload;
-    serializeJson(doc, payload);
-
-    HTTPClient http;
-    WiFiClient client;
-    String url = "http://" + String(host) + ":" + String(port) + "/api/measurements";
-
-    http.begin(client, url);
-    http.addHeader("Content-Type", "application/json");
-
-    int httpResponseCode = http.POST(payload);
-
-    if (httpResponseCode > 0) {
-        String response = http.getString();
-        Serial.println(httpResponseCode);
-        Serial.println(response);
-    } else {
-        Serial.print("Fehler beim Senden des POST: ");
-        Serial.println(httpResponseCode);
-    }
-
-    http.end();
+    performHttpsRequest(URL_MEASUREMENTS, doc);
 }
 
 void setup() {
@@ -150,6 +162,7 @@ void setup() {
     sht3xd.begin(0x44);
 
     connectToWiFi();
+    initializeSSL(); // Initialize SSL
     confirmSensorRegistration(); // Bestätige die Registrierung des Sensors nach der WiFi-Verbindung
 }
 
@@ -161,5 +174,5 @@ void loop() {
         sendSensorData();
     }
 
-    delay(15000); // Sende alle 15 Sekunden Daten
+    delay(5000); // Sende alle 5 Sekunden Daten
 }
