@@ -20,15 +20,15 @@ const char* SSID = "WIFI-SSID";
 const char* PASSWORD = "WIFI-PASSWORD";
 
 // Server-Konfiguration
-const char* HOST = "HOST-IP";
+const char* HOST = "192.168.178.38";
 const uint16_t PORT = 8080;
 
 // User-Konfiguration
-const char* username = "default";
+const char* username = "haraldh";
 
 // API-Konfiguration
 const String URL_REGISTER_SENSOR_CONFIRM = String("http://") + HOST + ":" + PORT + "/api/register/sensor/confirm";
-const String URL_MEASUREMENTS = String("http://") + HOST + ":" + PORT + "/api/measurements";
+const String URL_MEASUREMENTS = String("http://") + HOST + ":" + PORT + "/api/measurements/raw-data";
 
 // Funktion zur Verbindung mit dem WiFi
 void connectToWiFi() {
@@ -136,22 +136,22 @@ void sendSensorData() {
     doc["timestamp"] = timestamp;
     doc["id"] = uniqueID;
 
-    JsonObject measurements = doc["measurements"].to<JsonObject>();
+    JsonArray measurements = doc.createNestedArray("measurements");
 
-    JsonObject temperatureJson = measurements.createNestedObject("temperature");
+    JsonObject temperatureJson = measurements.createNestedObject();
     temperatureJson["type"] = "TEMPERATURE";
     temperatureJson["value"] = String(temperature, 1);
     temperatureJson["unit"] = "CELSIUS";
 
-    JsonObject humidityJson = measurements.createNestedObject("humidity");
+    JsonObject humidityJson = measurements.createNestedObject();
     humidityJson["type"] = "HUMIDITY";
     humidityJson["value"] = String(humidity, 1);
     humidityJson["unit"] = "PERCENT";
 
-    JsonObject gasJson = measurements.createNestedObject("gas");
+    JsonObject gasJson = measurements.createNestedObject();
     gasJson["type"] = "GAS";
     gasJson["value"] = voc;
-    gasJson["unit"] = "PARTICLE";
+    gasJson["unit"] = "PPM";
 
     performHttpRequest(URL_MEASUREMENTS, doc);
 }
@@ -173,5 +173,5 @@ void loop() {
         sendSensorData();
     }
 
-    delay(5000); // Sende alle 5 Sekunden Daten
+    delay(60000); // Sende alle 60 Sekunden Daten
 }
