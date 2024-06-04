@@ -151,7 +151,7 @@ void sendSensorData() {
     JsonObject gasJson = measurements.createNestedObject("gas");
     gasJson["type"] = "GAS";
     gasJson["value"] = voc;
-    gasJson["unit"] = "PARTICLE";
+    gasJson["unit"] = "PPM";
 
     performHttpRequest(URL_MEASUREMENTS, doc);
 }
