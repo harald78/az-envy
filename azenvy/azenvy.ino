@@ -13,6 +13,8 @@ const char* APPLICATION_JSON = "application/json";
 const char* NTP_SERVER = "pool.ntp.org";
 const long GMT_OFFSET_SEC = 3600;
 const int DAYLIGHT_OFFSET_SEC = 3600;
+const char* API_KEY_HEADER_NAME = "X-API-KEY";
+const char* API_KEY = "your-api-key-token";
 
 // WiFi-Konfiguration
 const char* WIFI_PROVIDER = "WPS"; // WPS oder SSID
@@ -27,8 +29,8 @@ const uint16_t PORT = 8080;
 const char* username = "haraldh";
 
 // API-Konfiguration
-const String URL_REGISTER_SENSOR_CONFIRM = String("http://") + HOST + ":" + PORT + "/api/register/sensor/confirm";
-const String URL_MEASUREMENTS = String("http://") + HOST + ":" + PORT + "/api/measurements/raw-data";
+const String URL_REGISTER_SENSOR_CONFIRM = String("http://") + HOST + ":" + PORT + "/api/sensor/register/confirm";
+const String URL_MEASUREMENTS = String("http://") + HOST + ":" + PORT + "/api/sensor/measurements";
 
 // Funktion zur Verbindung mit dem WiFi
 void connectToWiFi() {
@@ -81,7 +83,9 @@ int performHttpRequest(const String& url, StaticJsonDocument<200>& doc) {
     WiFiClient client;
     HTTPClient http;
     http.begin(client, url);
-    http.addHeader("Content-Type", APPLICATION_JSON);
+    http.addHeader("Content-Type", APPLICATION_JSON, true, true);
+    http.addHeader(API_KEY_HEADER_NAME, API_KEY, false, false);
+    
 
     String payload;
     serializeJson(doc, payload);
