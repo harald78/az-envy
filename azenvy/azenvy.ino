@@ -13,6 +13,8 @@ const char* APPLICATION_JSON = "application/json";
 const char* NTP_SERVER = "pool.ntp.org";
 const long GMT_OFFSET_SEC = 3600;
 const int DAYLIGHT_OFFSET_SEC = 3600;
+const char* API_KEY_HEADER_NAME = "X-API-KEY";
+const char* API_KEY = "your-api-key-token";
 
 // WiFi-Konfiguration
 const char* WIFI_PROVIDER = "WPS"; // WPS oder SSID
@@ -20,15 +22,15 @@ const char* SSID = "WIFI-SSID";
 const char* PASSWORD = "WIFI-PASSWORD";
 
 // Server-Konfiguration
-const char* HOST = "HOST-IP";
+const char* HOST = "192.168.178.38";
 const uint16_t PORT = 8080;
 
 // User-Konfiguration
-const char* username = "default";
+const char* username = "haraldh";
 
 // API-Konfiguration
-const String URL_REGISTER_SENSOR_CONFIRM = String("http://") + HOST + ":" + PORT + "/api/register/sensor/confirm";
-const String URL_MEASUREMENTS = String("http://") + HOST + ":" + PORT + "/api/measurements";
+const String URL_REGISTER_SENSOR_CONFIRM = String("http://") + HOST + ":" + PORT + "/api/sensor/register/confirm";
+const String URL_MEASUREMENTS = String("http://") + HOST + ":" + PORT + "/api/sensor/measurements";
 
 // Funktion zur Verbindung mit dem WiFi
 void connectToWiFi() {
@@ -81,7 +83,9 @@ int performHttpRequest(const String& url, StaticJsonDocument<200>& doc) {
     WiFiClient client;
     HTTPClient http;
     http.begin(client, url);
-    http.addHeader("Content-Type", APPLICATION_JSON);
+    http.addHeader("Content-Type", APPLICATION_JSON, true, true);
+    http.addHeader(API_KEY_HEADER_NAME, API_KEY, false, false);
+    
 
     String payload;
     serializeJson(doc, payload);
@@ -136,19 +140,19 @@ void sendSensorData() {
     doc["timestamp"] = timestamp;
     doc["id"] = uniqueID;
 
-    JsonObject measurements = doc["measurements"].to<JsonObject>();
+    JsonArray measurements = doc.createNestedArray("measurements");
 
-    JsonObject temperatureJson = measurements.createNestedObject("temperature");
+    JsonObject temperatureJson = measurements.createNestedObject();
     temperatureJson["type"] = "TEMPERATURE";
     temperatureJson["value"] = String(temperature, 1);
     temperatureJson["unit"] = "CELSIUS";
 
-    JsonObject humidityJson = measurements.createNestedObject("humidity");
+    JsonObject humidityJson = measurements.createNestedObject();
     humidityJson["type"] = "HUMIDITY";
     humidityJson["value"] = String(humidity, 1);
     humidityJson["unit"] = "PERCENT";
 
-    JsonObject gasJson = measurements.createNestedObject("gas");
+    JsonObject gasJson = measurements.createNestedObject();
     gasJson["type"] = "GAS";
     gasJson["value"] = voc;
     gasJson["unit"] = "PPM";
@@ -173,5 +177,5 @@ void loop() {
         sendSensorData();
     }
 
-    delay(5000); // Sende alle 5 Sekunden Daten
+    delay(60000); // Sende alle 60 Sekunden Daten
 }
