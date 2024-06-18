@@ -293,42 +293,42 @@ void sendSensorData() {
 
     JsonObject temperatureJson = measurements.createNestedObject();
     temperatureJson["type"] = "TEMPERATURE";
-    temperatureJson["value"] = String(temperature, 1);
+    temperatureJson["value"] = temperature;
     temperatureJson["unit"] = "CELSIUS";
 
     JsonObject humidityJson = measurements.createNestedObject();
     humidityJson["type"] = "HUMIDITY";
-    humidityJson["value"] = String(humidity, 1);
+    humidityJson["value"] = humidity;
     humidityJson["unit"] = "PERCENT";
 
     JsonObject vocJson = measurements.createNestedObject();
     vocJson["type"] = "VOC";
-    vocJson["value"] = String(voc, 0);
+    vocJson["value"] = voc;
     vocJson["unit"] = "PPM";
 
     JsonObject h2Json = measurements.createNestedObject();
     h2Json["type"] = "H2";
-    h2Json["value"] = String(h2, 1);
+    h2Json["value"] = h2;
     h2Json["unit"] = "PPM";
 
     JsonObject lpgJson = measurements.createNestedObject();
     lpgJson["type"] = "LPG";
-    lpgJson["value"] = String(lpg, 1);
+    lpgJson["value"] = lpg;
     lpgJson["unit"] = "PPM";
 
     JsonObject coJson = measurements.createNestedObject();
     coJson["type"] = "CO";
-    coJson["value"] = String(co, 1);
+    coJson["value"] = co;
     coJson["unit"] = "PPM";
 
     JsonObject alcoholJson = measurements.createNestedObject();
     alcoholJson["type"] = "ALCOHOL";
-    alcoholJson["value"] = String(alcohol, 1);
+    alcoholJson["value"] = alcohol;
     alcoholJson["unit"] = "PPM";
 
     JsonObject propaneJson = measurements.createNestedObject();
     propaneJson["type"] = "PROPANE";
-    propaneJson["value"] = String(propane, 1);
+    propaneJson["value"] = propane;
     propaneJson["unit"] = "PPM";
 
     performHttpRequest(URL_MEASUREMENTS, doc);
