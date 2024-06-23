@@ -1,5 +1,4 @@
 #include <ESP8266WiFi.h>
-#include <ESPAsyncTCP.h>
 #include <WiFiClient.h>
 #include <Wire.h>
 #include <ClosedCube_SHT31D.h>
@@ -7,48 +6,61 @@
 #include <time.h>
 #include <ArduinoJson.h>
 #include <ArduinoUniqueID.h>
-#include <ArduinoOTA.h>
-#include <ESPAsyncWebServer.h>
-#include <WebSerial.h>
+#include <MQUnifiedsensor.h>
+/************************Hardware Related Macros************************************/
+#define         Board                   ("ESP8266")
+#define         Pin                     (A0)  //Analog input 0 of your ESP8266
+/***********************Software Related Macros************************************/
+#define         Type                    ("MQ-2") //MQ2
+#define         Voltage_Resolution      (5)
+#define         ADC_Bit_Resolution      (10) // For arduino UNO/MEGA/NANO
+#define         RatioMQ2CleanAir        (9.83) //RS / R0 = 9.83 ppm
+
+/*****************************Globals***********************************************/
+MQUnifiedsensor MQ2_H2(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
+MQUnifiedsensor MQ2_LPG(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
+MQUnifiedsensor MQ2_CO(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
+MQUnifiedsensor MQ2_Alcohol(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
+MQUnifiedsensor MQ2_Propane(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
+/*****************************Globals***********************************************/
 
 // Konstanten
 const char *APPLICATION_JSON = "application/json";
 const char *NTP_SERVER = "pool.ntp.org";
-const long GMT_OFFSET_SEC = 3600; // Offset für die Zeitzone (1 Stunde)
-const int DAYLIGHT_OFFSET_SEC = 3600; // Offset für Sommerzeit (1 Stunde)
-const char *API_KEY_HEADER_NAME = "X-API-KEY"; // Name des API-Schlüssel-Headers
-const char *API_KEY = "api-key"; // API-Schlüssel
+const long GMT_OFFSET_SEC = 3600; // Offset for GMT+1
+const int DAYLIGHT_OFFSET_SEC = 3600; // Offset for daylight saving time
+const char *API_KEY_HEADER_NAME = "X-API-KEY"; // Name of the API key header
+const char *API_KEY = "api-key"; // API key
 
-// WiFi-Konfiguration
-const char *WIFI_PROVIDER = "SSID"; // WiFi-Anbieter: WPS oder SSID
+// WiFi configuration
+const char *WIFI_PROVIDER = "SSID"; // WiFi provider (WPS or SSID)
 const char *SSID = "wifi-ssid"; // WiFi-SSID
-const char *PASSWORD = "wifi-password"; // WiFi-Passwort
-unsigned long previousMillis = millis(); // Vorherige Millisekunden
-unsigned long interval = 30000; // Intervall für WiFi-Verbindungsüberprüfung (30 Sekunden)
-unsigned long send_sensor_data_interval = 60000; // Intervall für das Senden von Sensordaten (60 Sekunden)
-unsigned long webSerial_interval = 2000; // Intervall für WebSerial (2 Sekunden)
+const char *PASSWORD = "wifi-password"; // WiFi password
+unsigned long previousMillis = millis(); // Previous time
+unsigned long interval = 30000; // Interval for checking WiFi connection (30 seconds)
+unsigned long send_sensor_data_interval = 60000; // Interval for sending sensor data (60 seconds)
+unsigned long webSerial_interval = 2000; // Interval for WebSerial (2 seconds)
 
-// Server-Konfiguration
-const char *HOST = "192.168.1.6"; // Server-Host
-const uint16_t PORT = 8080; // Server-Port
+// Server configuration
+const char *HOST = "server-ip"; // Server IP
+const uint16_t PORT = 8080; // Server port
 
-// User-Konfiguration
-const char *USERNAME = "default"; // Standardbenutzername
+// User configuration
+const char *USERNAME = "default"; // Username
 
-// API-Konfiguration
+// API Configuration
 const String URL_REGISTER_SENSOR_CONFIRM =
-        String(HOST) + ":" + PORT + "/api/sensor/register/confirm"; // URL für Sensorregistrierung
-const String URL_MEASUREMENTS = String(HOST) + ":" + PORT + "/api/sensor/measurements"; // URL für Sensormessungen
+        String(HOST) + ":" + PORT + "/api/sensor/register/confirm"; // URL for sensor registration confirmation
+const String URL_MEASUREMENTS = String(HOST) + ":" + PORT + "/api/sensor/measurements"; // URL for sensor measurements
 
-// Optionale Sicherheitseinstellungen
+// Optional server certificate verification
 const char *ROOT_CA = ""; /*\
 "-----BEGIN CERTIFICATE-----\n" \
 "MIID...." \
-"-----END CERTIFICATE-----\n";*/ // Root-Zertifikat des Servers
-const char *FINGERPRINT = ""; /*"XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX";*/ // SHA-1 Fingerabdruck des Serverzertifikats
+"-----END CERTIFICATE-----\n";*/ // Root CA certificate of the server
+const char *FINGERPRINT = ""; /*"XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX";*/ // SHA-1 fingerprint of the server certificate
 
 ClosedCube_SHT31D sht3xd; // SHT31D-Sensor
-AsyncWebServer server(80); // AsyncWebServer auf Port 80
 
 /**
  * Verbindet mit dem WiFi
@@ -59,7 +71,19 @@ void connectToWiFi() {
 
     if (strcmp(WIFI_PROVIDER, "WPS") == 0) {
         Serial.println("Starte WPS-Verbindung...");
+        WiFi.persistent(true); // Einstellungen persistent speichern
         WiFi.beginWPSConfig();
+        // Warte, bis die WPS-Konfiguration abgeschlossen ist
+        while (WiFi.status() != WL_CONNECTED) {
+            delay(500);
+            Serial.print(".");
+        }
+        // Speicher die WiFi-Verbindung dauerhaft
+        if (WiFi.SSID().length() > 0) {
+            Serial.println("WPS-Verbindung erfolgreich, speichere die Verbindung.");
+            WiFi.persistent(true);
+            WiFi.begin(WiFi.SSID().c_str(), WiFi.psk().c_str());
+        }
     } else {
         Serial.print("Verbinde mit ");
         Serial.println(SSID);
@@ -80,6 +104,54 @@ void connectToWiFi() {
     // Initialisiere NTP
     configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
 }
+
+/**
+ * Kalibriert den Sensor und gibt wichtige Werte aus
+ */
+void calibrateMQ2Sensor(MQUnifiedsensor &type, const char* name, float a, float b) {
+    type.setRegressionMethod(1);
+    type.setA(a);
+    type.setB(b); // Configure the equation to to calculate concentration
+    /*
+      Exponential regression:
+      Gas    | a      | b
+      H2     | 987.99 | -2.162
+      LPG    | 574.25 | -2.222
+      CO     | 36974  | -3.109
+      Alcohol| 3616.1 | -2.675
+      Propane| 658.71 | -2.168
+    */
+
+    type.init();
+    /*
+      //If the RL value is different from 10K please assign your RL value with the following method:
+      MQ2.setRL(10);
+    */
+    /*****************************  MQ CAlibration ********************************************/
+    // Explanation:
+    // In this routine the sensor will measure the resistance of the sensor supposedly before being pre-heated
+    // and on clean air (Calibration conditions), setting up R0 value.
+    // We recomend executing this routine only on setup in laboratory conditions.
+    // This routine does not need to be executed on each restart, you can load your R0 value from eeprom.
+    // Acknowledgements: https://jayconsystems.com/blog/understanding-a-gas-sensor
+
+    Serial.print("\nCalibrating " + String(name) + "...please wait.");
+    float calcR0 = 0;
+    for(int i = 1; i<=10; i ++)
+    {
+        type.update(); // Update data, the arduino will read the voltage from the analog pin
+        calcR0 += type.calibrate(RatioMQ2CleanAir);
+        Serial.print(".");
+    }
+    type.setR0(calcR0/10);
+    Serial.println("  done!.");
+
+
+    if(isinf(calcR0)) {Serial.println("Warning: Connection issue, R0 is infinite (Open circuit detected) please check your wiring and supply"); while(1);}
+    if(calcR0 == 0){Serial.println("Warning: Connection issue found, R0 is zero (Analog pin shorts to ground) please check your wiring and supply"); while(1);}
+    /*****************************  MQ CAlibration ********************************************/
+}
+
 
 /**
  * Formatiert die aktuelle Zeit
@@ -151,32 +223,17 @@ int performHttpRequest(const String &url, StaticJsonDocument<200> &doc) {
     serializeJsonPretty(doc, Serial);
     Serial.println("\n-- Response --");
 
-    // Zusätzlich in WebSerial ausgeben
-    WebSerial.println("-- Endpunkt URL --");
-    WebSerial.println(urlString);
-    WebSerial.println("-- Payload --");
-    serializeJsonPretty(doc, WebSerial);
-    WebSerial.println("\n-- Response --");
-
     if (httpResponseCode > 0) {
         String response = http.getString();
         Serial.print(httpResponseCode);
         Serial.print(": ");
         Serial.println(response);
-
-        WebSerial.print(httpResponseCode);
-        WebSerial.print(": ");
-        WebSerial.println(response);
     } else {
         Serial.print("Fehler beim Senden des POST: ");
         Serial.println(httpResponseCode);
-
-        WebSerial.print("Fehler beim Senden des POST: ");
-        WebSerial.println(httpResponseCode);
     }
 
     Serial.println("");
-    WebSerial.println("");
 
     http.end();
     delete client;
@@ -197,6 +254,15 @@ void confirmSensorRegistration() {
 }
 
 /**
+ * Liest Sensordaten
+ */
+float readMQ2SensorData(MQUnifiedsensor &type) {
+    type.update(); // Update data, the arduino will read the voltage from the analog pin
+
+    return type.readSensor();
+}
+
+/**
  * Sendet Sensordaten an den Server
  */
 void sendSensorData() {
@@ -205,8 +271,18 @@ void sendSensorData() {
     float humidity = result.rh;
     float voc = analogRead(A0); // MQ-2-Sensor ist an Serial-Port 0 angeschlossen
 
+    float h2 = readMQ2SensorData(MQ2_H2);
+    float lpg = readMQ2SensorData(MQ2_LPG);
+    float co = readMQ2SensorData(MQ2_CO);
+    float alcohol = readMQ2SensorData(MQ2_Alcohol);
+    float propane = readMQ2SensorData(MQ2_Propane);
+
     String timestamp = getFormattedTime();
     String uniqueID = getUniqueID();
+
+    Serial.println("Current Sensor Data (" + String(uniqueID) + " - " + String(timestamp) + ") -> Temperature: " + String(temperature, 1) + ", Humidity: " + String(humidity, 1) +
+                   ", VOC: " + String(voc, 1) + ", H2: " + String(h2, 1) + ", LPG: " + String(lpg, 1) + ", CO: " + String(co, 1) +
+                   ", Alcohol: " + String(alcohol, 1) + ", Propane: " + String(propane, 1));
 
     StaticJsonDocument<200> doc;
     doc["base"] = "AZEnvy";
@@ -217,18 +293,43 @@ void sendSensorData() {
 
     JsonObject temperatureJson = measurements.createNestedObject();
     temperatureJson["type"] = "TEMPERATURE";
-    temperatureJson["value"] = String(temperature, 1);
+    temperatureJson["value"] = temperature;
     temperatureJson["unit"] = "CELSIUS";
 
     JsonObject humidityJson = measurements.createNestedObject();
     humidityJson["type"] = "HUMIDITY";
-    humidityJson["value"] = String(humidity, 1);
+    humidityJson["value"] = humidity;
     humidityJson["unit"] = "PERCENT";
 
-    JsonObject gasJson = measurements.createNestedObject();
-    gasJson["type"] = "GAS";
-    gasJson["value"] = voc;
-    gasJson["unit"] = "PPM";
+    JsonObject vocJson = measurements.createNestedObject();
+    vocJson["type"] = "VOC";
+    vocJson["value"] = voc;
+    vocJson["unit"] = "PPM";
+
+    JsonObject h2Json = measurements.createNestedObject();
+    h2Json["type"] = "H2";
+    h2Json["value"] = h2;
+    h2Json["unit"] = "PPM";
+
+    JsonObject lpgJson = measurements.createNestedObject();
+    lpgJson["type"] = "LPG";
+    lpgJson["value"] = lpg;
+    lpgJson["unit"] = "PPM";
+
+    JsonObject coJson = measurements.createNestedObject();
+    coJson["type"] = "CO";
+    coJson["value"] = co;
+    coJson["unit"] = "PPM";
+
+    JsonObject alcoholJson = measurements.createNestedObject();
+    alcoholJson["type"] = "ALCOHOL";
+    alcoholJson["value"] = alcohol;
+    alcoholJson["unit"] = "PPM";
+
+    JsonObject propaneJson = measurements.createNestedObject();
+    propaneJson["type"] = "PROPANE";
+    propaneJson["value"] = propane;
+    propaneJson["unit"] = "PPM";
 
     performHttpRequest(URL_MEASUREMENTS, doc);
 }
@@ -241,71 +342,13 @@ void setup() {
     Wire.begin();
     sht3xd.begin(0x44);
 
+    calibrateMQ2Sensor(MQ2_H2, "MQ2_H2", 987.99, -2.162);
+    calibrateMQ2Sensor(MQ2_LPG, "MQ2_LPG", 574.25, -2.222);
+    calibrateMQ2Sensor(MQ2_CO, "MQ2_CO", 36974, -3.109);
+    calibrateMQ2Sensor(MQ2_Alcohol, "MQ2_Alcohol", 3616.1, -2.675);
+    calibrateMQ2Sensor(MQ2_Propane, "MQ2_Propane", 658.71, -2.168);
+
     connectToWiFi();
-
-    // ArduinoOTA für OTA-Updates
-    ArduinoOTA.setHostname("envy");
-    ArduinoOTA.setPassword("admin");
-
-    ArduinoOTA.onStart([]() {
-        String type;
-        if (ArduinoOTA.getCommand() == U_FLASH) {
-            type = "sketch";
-        } else {  // U_FS
-            type = "filesystem";
-        }
-
-        Serial.println("Start updating " + type);
-    });
-    ArduinoOTA.onEnd([]() {
-        Serial.println("\nEnd");
-    });
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    });
-    ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("Error[%u]: ", error);
-        if (error == OTA_AUTH_ERROR) {
-            Serial.println("Auth Failed");
-        } else if (error == OTA_BEGIN_ERROR) {
-            Serial.println("Begin Failed");
-        } else if (error == OTA_CONNECT_ERROR) {
-            Serial.println("Connect Failed");
-        } else if (error == OTA_RECEIVE_ERROR) {
-            Serial.println("Receive Failed");
-        } else if (error == OTA_END_ERROR) {
-            Serial.println("End Failed");
-        }
-    });
-    ArduinoOTA.begin();
-
-    // WebSerial starten
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/plain", "Hi! This is WebSerial. You can access webserial interface at http://" +
-                                         WiFi.localIP().toString() + "/webserial");
-        Serial.println(
-                "Hi! This is WebSerial. You can access webserial interface at http://" + WiFi.localIP().toString() +
-                "/webserial");
-    });
-
-    // WebSerial is accessible at "<IP Address>/webserial" in browser
-    WebSerial.begin(&server);
-
-    // Attach Message Callback
-    WebSerial.onMessage([&](uint8_t *data, size_t len) {
-        Serial.printf("Received %u bytes from WebSerial: ", len);
-        Serial.write(data, len);
-        Serial.println();
-        WebSerial.println("Received Data...");
-        String d = "";
-        for (size_t i = 0; i < len; i++) {
-            d += char(data[i]);
-        }
-        WebSerial.println(d);
-    });
-
-    // Start server
-    server.begin();
 
     confirmSensorRegistration(); // Bestätige die Registrierung des Sensors nach der WiFi-Verbindung
 }
@@ -315,8 +358,6 @@ void setup() {
  */
 void loop() {
     unsigned long currentMillis = millis();
-
-    ArduinoOTA.handle();
 
     // Überprüfe die WiFi-Verbindung alle 30 Sekunden und verbinde erneut, falls getrennt
     if ((WiFi.status() != WL_CONNECTED) && (currentMillis - previousMillis >= interval)) {
@@ -332,5 +373,4 @@ void loop() {
         sendSensorData();
         previousMillis = currentMillis;
     }
-    WebSerial.loop();
 }
