@@ -30,7 +30,7 @@ const char *NTP_SERVER = "pool.ntp.org";
 const long GMT_OFFSET_SEC = 3600; // Offset for GMT+1
 const int DAYLIGHT_OFFSET_SEC = 3600; // Offset for daylight saving time
 const char *API_KEY_HEADER_NAME = "X-API-KEY"; // Name of the API key header
-const char *API_KEY = "your-api-key"; // API key
+const char *API_KEY = "eEARTx1FlnPTClNggEJ4mh8kFJLIV2ni"; // API key
 
 // WiFi configuration
 const char *WIFI_PROVIDER = "WPS"; // WiFi provider (WPS or SSID)
@@ -42,8 +42,8 @@ unsigned long send_sensor_data_interval = 60000; // Interval for sending sensor 
 unsigned long webSerial_interval = 2000; // Interval for WebSerial (2 seconds)
 const int maxConnectAttempts = 60;
 // Server configuration
-const char *HOST = "your-host"; // Server IP
-const uint16_t PORT = 8080; // Server port
+const char *HOST = "server.airqualityhome.life"; // Server IP
+const uint16_t PORT = 443; // Server port
 
 // User configuration
 const char *USERNAME = "default"; // Username
@@ -58,7 +58,7 @@ const char *ROOT_CA = ""; /*\
 "-----BEGIN CERTIFICATE-----\n" \
 "MIID...." \
 "-----END CERTIFICATE-----\n";*/ // Root CA certificate of the server
-const char *FINGERPRINT = ""; /*"XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX";*/ // SHA-1 fingerprint of the server certificate
+const char *FINGERPRINT = "E5 5D E6 5A 9D FE 67 0A C5 FE 21 C2 EA 8F 6A CD 14 B1 D5 56"; /*"XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX";*/ // SHA-1 fingerprint of the server certificate
 
 ClosedCube_SHT31D sht3xd; // SHT31D-Sensor
 
@@ -96,7 +96,7 @@ void connectToWiFi() {
 
         while (WiFi.status() != WL_CONNECTED) {
             delay(500);
-            Serial.print(".");
+           Serial.print(".");
         }
     }
 
@@ -348,7 +348,7 @@ void setup() {
     sht3xd.begin(0x44);
 
     connectToWiFi();
-
+    
     calibrateMQ2Sensor(MQ2_H2, "MQ2_H2", 987.99, -2.162);
     calibrateMQ2Sensor(MQ2_LPG, "MQ2_LPG", 574.25, -2.222);
     calibrateMQ2Sensor(MQ2_CO, "MQ2_CO", 36974, -3.109);
