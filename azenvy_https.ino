@@ -268,7 +268,7 @@ int performHttpRequest(const String &url, StaticJsonDocument<200> &doc)
 
     logMessage("-- Endpoint URL --\n" + urlString + "\n-- Payload --");
     serializeJsonPretty(doc, Serial);
-    logMessage("\n-- Response --\n");
+    logMessage("\n-- Response --");
 
     if (httpResponseCode > 0)
     {
@@ -282,6 +282,9 @@ int performHttpRequest(const String &url, StaticJsonDocument<200> &doc)
 
     logMessage("");
     http.end();
+
+    delete client;
+
     return httpResponseCode;
 }
 
@@ -327,11 +330,11 @@ void sendSensorData()
     float voc = analogRead(A0); // MQ-2 sensor is connected to Serial Port 0
 
     // Calibrate each time to prevent extremely wrong values
-    calibrateMQ2Sensor(mq2H2, "MQ2_H2", MQ2_H2_A, MQ2_H2_B);
-    calibrateMQ2Sensor(mq2LPG, "MQ2_LPG", MQ2_LPG_A, MQ2_LPG_B);
-    calibrateMQ2Sensor(mq2CO, "MQ2_CO", MQ2_CO_A, MQ2_CO_B);
-    calibrateMQ2Sensor(mq2Alcohol, "MQ2_Alcohol", MQ2_ALCOHOL_A, MQ2_ALCOHOL_B);
-    calibrateMQ2Sensor(mq2Propane, "MQ2_Propane", MQ2_PROPANE_A, MQ2_PROPANE_B);
+    calibrateMQ2Sensor(mq2H2, "MQ2_H2", 987.99, -2.162);
+    calibrateMQ2Sensor(mq2LPG, "MQ2_LPG", 574.25, -2.222);
+    calibrateMQ2Sensor(mq2CO, "MQ2_CO", 36974, -3.109);
+    calibrateMQ2Sensor(mq2Alcohol, "MQ2_Alcohol", 3616.1, -2.675);
+    calibrateMQ2Sensor(mq2Propane, "MQ2_Propane", 658.71, -2.168);
 
     float h2 = readMQ2SensorData(mq2H2);
     float lpg = readMQ2SensorData(mq2LPG);
