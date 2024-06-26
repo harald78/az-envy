@@ -1,5 +1,5 @@
+/*** Includes ***/
 #include <ESP8266WiFi.h>
-//#include <WiFiClient.h>
 #include <Wire.h>
 #include <ClosedCube_SHT31D.h>
 #include <ESP8266HTTPClient.h>
@@ -7,165 +7,207 @@
 #include <ArduinoJson.h>
 #include <ArduinoUniqueID.h>
 #include <MQUnifiedsensor.h>
-/************************Hardware Related Macros************************************/
-#define         Board                   ("ESP8266")
-#define         Pin                     (A0)  //Analog input 0 of your ESP8266
-/***********************Software Related Macros************************************/
-#define         Type                    ("MQ-2") //MQ2
-#define         Voltage_Resolution      (5)
-#define         ADC_Bit_Resolution      (10) // For arduino UNO/MEGA/NANO
-#define         RatioMQ2CleanAir        (9.83) //RS / R0 = 9.83 ppm
 
-/*****************************Globals***********************************************/
-MQUnifiedsensor MQ2_H2(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
-MQUnifiedsensor MQ2_LPG(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
-MQUnifiedsensor MQ2_CO(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
-MQUnifiedsensor MQ2_Alcohol(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
-MQUnifiedsensor MQ2_Propane(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type);
-/*****************************Globals***********************************************/
+/*** User Configuration ***/
+const char *ssid = "wifi-ssid";         // WiFi SSID
+const char *psk = "wifi-password";      // WiFi password
+const char *host = "your-host";         // Server IP
+const uint16_t port = 8080;             // Server port
+const char *username = "default";       // Username
+const char *fingerprint = "";           // SHA-1 fingerprint of the server certificate
+const char *apiKey = "your-api-key";    // API key
 
-// Konstanten
-const char *APPLICATION_JSON = "application/json";
-const char *NTP_SERVER = "pool.ntp.org";
-const long GMT_OFFSET_SEC = 3600; // Offset for GMT+1
-const int DAYLIGHT_OFFSET_SEC = 3600; // Offset for daylight saving time
-const char *API_KEY_HEADER_NAME = "X-API-KEY"; // Name of the API key header
-const char *API_KEY = "your-api-key"; // API key
+/*** API Configuration ***/
+const String urlRegisterSensorConfirm = String(host) + ":" + port + "/api/sensor/register/confirm"; // URL for sensor registration confirmation
+const String urlMeasurements = String(host) + ":" + port + "/api/sensor/measurements";              // URL for sensor measurements
+const char *applicationJson = "application/json";
+const char *apiKeyHeaderName = "X-API-KEY"; // Name of the API key header
+bool sensorRegistered = false;
 
-// WiFi configuration
-const char *WIFI_PROVIDER = "WPS"; // WiFi provider (WPS or SSID)
-const char *SSID = "wifi-ssid"; // WiFi-SSID
-const char *PASSWORD = "wifi-password"; // WiFi password
-unsigned long previousMillis = millis(); // Previous time
-unsigned long interval = 30000; // Interval for checking WiFi connection (30 seconds)
-unsigned long send_sensor_data_interval = 60000; // Interval for sending sensor data (60 seconds)
-unsigned long webSerial_interval = 2000; // Interval for WebSerial (2 seconds)
+/*** Timing Configuration ***/
+unsigned long initialMillis = millis();   // Initial time
+const int interval = 30000;                     // Interval for checking WiFi connection (30 seconds)
+const int sendSensorDataInterval = 60000;       // Interval for sending sensor data (60 seconds)
 const int maxConnectAttempts = 60;
-// Server configuration
-const char *HOST = "your-host"; // Server IP
-const uint16_t PORT = 8080; // Server port
 
-// User configuration
-const char *USERNAME = "default"; // Username
+/*** NTP Configuration ***/
+const char *ntpServer = "pool.ntp.org";
+const long gmtOffsetSec = 3600;      // Offset for GMT+1
+const int daylightOffsetSec = 3600;  // Offset for daylight saving time
 
-// API Configuration
-const String URL_REGISTER_SENSOR_CONFIRM =
-        String(HOST) + ":" + PORT + "/api/sensor/register/confirm"; // URL for sensor registration confirmation
-const String URL_MEASUREMENTS = String(HOST) + ":" + PORT + "/api/sensor/measurements"; // URL for sensor measurements
+/*** Board Configuration ***/
+const char *board = "ESP8266";
+const int pin = A0;          // Analog input 0 of your ESP8266
+const int wpsButton = 0;     // Use FLASH button as WPS button
+const char *type = "MQ-2";   // MQ2
+const int voltageResolution = 5;
+const int adcBitResolution = 10;        // For Arduino UNO/MEGA/NANO
+const float ratioMQ2CleanAir = 9.83;    // RS / R0 = 9.83 ppm
 
-// Optional server certificate verification
-const char *ROOT_CA = ""; /*\
-"-----BEGIN CERTIFICATE-----\n" \
-"MIID...." \
-"-----END CERTIFICATE-----\n";*/ // Root CA certificate of the server
-const char *FINGERPRINT = ""; /*"XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX";*/ // SHA-1 fingerprint of the server certificate
+/*** Sensor Calibration Constants ***/
+const float MQ2_H2_A = 987.99;
+const float MQ2_H2_B = -2.162;
+const float MQ2_LPG_A = 574.25;
+const float MQ2_LPG_B = -2.222;
+const float MQ2_CO_A = 36974;
+const float MQ2_CO_B = -3.109;
+const float MQ2_ALCOHOL_A = 3616.1;
+const float MQ2_ALCOHOL_B = -2.675;
+const float MQ2_PROPANE_A = 658.71;
+const float MQ2_PROPANE_B = -2.168;
 
-ClosedCube_SHT31D sht3xd; // SHT31D-Sensor
+/*** Globals ***/
+ClosedCube_SHT31D sht3xd;
+MQUnifiedsensor mq2H2(board, voltageResolution, adcBitResolution, pin, type);
+MQUnifiedsensor mq2LPG(board, voltageResolution, adcBitResolution, pin, type);
+MQUnifiedsensor mq2CO(board, voltageResolution, adcBitResolution, pin, type);
+MQUnifiedsensor mq2Alcohol(board, voltageResolution, adcBitResolution, pin, type);
+MQUnifiedsensor mq2Propane(board, voltageResolution, adcBitResolution, pin, type);
 
 /**
- * Verbindet mit dem WiFi
+ * Logs messages to Serial
  */
-void connectToWiFi() {
+void logMessage(const String &message)
+{
+    Serial.println(message);
+}
 
-    // WiFi.mode(WIFI_STA);
-    Serial.println("");
+/**
+ * Starts WPS Configuration
+ */
+bool startWPS()
+{
+    logMessage("Starting WPS Configuration");
+    bool wpsSuccess = WiFi.beginWPSConfig();
+    if (wpsSuccess)
+    {
+        // It doesn’t always have to be successful! After a timeout, the SSID is empty.
+        String newSSID = WiFi.SSID();
+        if (newSSID.length() > 0)
+        {
+            // Only if an SSID was found, were we successful.
+            logMessage("WPS done. Successfully connected to SSID '" + newSSID + "'");
+        }
+        else
+        {
+            wpsSuccess = false;
+        }
+    }
+    return wpsSuccess;
+}
+
+/**
+ * Reconnects WiFi
+ */
+void reconnectWiFi()
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        logMessage("Reconnecting to WiFi...");
+        WiFi.disconnect();
+        WiFi.reconnect();
+    }
+}
+
+/**
+ * Connects to WiFi
+ */
+void connectToWiFi()
+{
     int connectAttempts = 0;
 
-    if (strcmp(WIFI_PROVIDER, "WPS") == 0) {
-        Serial.println("Starte WPS-Verbindung...");
-        WiFi.persistent(true); // Einstellungen persistent speichern
-        WiFi.beginWPSConfig();
+    WiFi.mode(WIFI_STA);
 
-        // Warte, bis die WPS-Konfiguration abgeschlossen ist
-        while (WiFi.status() != WL_CONNECTED) {
-            delay(500);
-            Serial.print(".");
-            connectAttempts += 1;
+    if (WiFi.SSID().length() > 0)
+    {
+        logMessage("\nAttempting connection with saved SSID '" + WiFi.SSID() + "'");
+        WiFi.begin(WiFi.SSID().c_str(), WiFi.psk().c_str());    // Last saved credentials
+    }
+     else if (strlen(ssid) > 0)
+    {
+        logMessage("Attempting connection with configured SSID '" + String(ssid) + "'");
+        WiFi.begin(ssid, psk);                                  // Configured credentials
+    }
+    else
+    {
+        logMessage("No SSID saved or configured. Press WPS button on your router and FLASH button on your AZ Envy.");
+        return;
+    }
+
+    while ((WiFi.status() == WL_DISCONNECTED) && (connectAttempts <= maxConnectAttempts))
+    {
+        delay(500);
+        Serial.print(".");
+        connectAttempts += 1;
+    }
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        logMessage("Successfully connected to SSID '" + WiFi.SSID() + "'");
+    }
+    else
+    {
+        logMessage("Cannot establish WiFi connection. Status = '" + String(WiFi.status()) + "'");
+        logMessage("Press WPS button on your router and FLASH button on your AZ Envy.");
+        while (digitalRead(wpsButton) != 0)
+        {
+            yield();
         }
-        // Speicher die WiFi-Verbindung dauerhaft
-        if (WiFi.SSID().length() > 0) {
-            Serial.println("WPS-Verbindung erfolgreich, speichere die Verbindung.");
-            WiFi.persistent(true);
-            WiFi.begin(WiFi.SSID().c_str(), WiFi.psk().c_str());
-        }
-
-    } else {
-        Serial.print("Verbinde mit ");
-        Serial.println(SSID);
-        WiFi.begin(SSID, PASSWORD);
-
-        while (WiFi.status() != WL_CONNECTED) {
-            delay(500);
-            Serial.print(".");
+        if (!startWPS())
+        {
+            logMessage("Cannot establish connection via WPS");
         }
     }
 
-    Serial.println("WiFi verbunden");
-    Serial.print("IP-Adresse: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("RSSI: ");
-    Serial.println(WiFi.RSSI());
-
-    // Initialisiere NTP
-    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
+    logMessage("IP address: " + WiFi.localIP().toString());
+    configTime(gmtOffsetSec, daylightOffsetSec, ntpServer); // Initialize NTP
 }
 
 /**
- * Kalibriert den Sensor und gibt wichtige Werte aus
+ * Calibrates the sensor and outputs important values
  */
-void calibrateMQ2Sensor(MQUnifiedsensor &type, const char* name, float a, float b) {
-    type.setRegressionMethod(1);
-    type.setA(a);
-    type.setB(b); // Configure the equation to to calculate concentration
-    /*
-      Exponential regression:
-      Gas    | a      | b
-      H2     | 987.99 | -2.162
-      LPG    | 574.25 | -2.222
-      CO     | 36974  | -3.109
-      Alcohol| 3616.1 | -2.675
-      Propane| 658.71 | -2.168
-    */
-
-    type.init();
-    /*
-      //If the RL value is different from 10K please assign your RL value with the following method:
-      MQ2.setRL(10);
-    */
-    /*****************************  MQ CAlibration ********************************************/
-    // Explanation:
-    // In this routine the sensor will measure the resistance of the sensor supposedly before being pre-heated
-    // and on clean air (Calibration conditions), setting up R0 value.
-    // We recomend executing this routine only on setup in laboratory conditions.
-    // This routine does not need to be executed on each restart, you can load your R0 value from eeprom.
-    // Acknowledgements: https://jayconsystems.com/blog/understanding-a-gas-sensor
-
-    Serial.print("\nCalibrating " + String(name) + "...please wait.");
+void calibrateMQ2Sensor(MQUnifiedsensor &sensor, const char *name, float a, float b)
+{
+    sensor.setRegressionMethod(1);
+    sensor.setA(a);
+    sensor.setB(b);
+    sensor.init();
+    Serial.print("Calibrating " + String(name) + "...please wait.");
     float calcR0 = 0;
-    for(int i = 1; i<=10; i ++)
+    const int calibrationRounds = 10;
+    for (int i = 1; i <= calibrationRounds; i++)
     {
-        type.update(); // Update data, the arduino will read the voltage from the analog pin
-        calcR0 += type.calibrate(RatioMQ2CleanAir);
+        sensor.update();
+        calcR0 += sensor.calibrate(ratioMQ2CleanAir);
         Serial.print(".");
     }
-    type.setR0(calcR0/10);
-    Serial.println("  done!.");
+    sensor.setR0(calcR0 / calibrationRounds);
+    Serial.println("  done!");
 
-
-    if(isinf(calcR0)) {Serial.println("Warning: Connection issue, R0 is infinite (Open circuit detected) please check your wiring and supply"); while(1);}
-    if(calcR0 == 0){Serial.println("Warning: Connection issue found, R0 is zero (Analog pin shorts to ground) please check your wiring and supply"); while(1);}
-    /*****************************  MQ CAlibration ********************************************/
+    if (isinf(calcR0))
+    {
+        logMessage("Warning: Connection issue, R0 is infinite (Open circuit detected) please check your wiring and supply");
+        while (1)
+            ;
+    }
+    if (calcR0 == 0)
+    {
+        logMessage("Warning: Connection issue found, R0 is zero (Analog pin shorts to ground) please check your wiring and supply");
+        while (1)
+            ;
+    }
 }
 
-
 /**
- * Formatiert die aktuelle Zeit
- * @return Die formatierte Zeit als String
+ * Formats the current time
+ * @return The formatted time as a string
  */
-String getFormattedTime() {
+String getFormattedTime()
+{
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
-        Serial.println("Zeit konnte nicht abgerufen werden");
+    if (!getLocalTime(&timeinfo))
+    {
+        logMessage("Failed to retrieve time");
         return "";
     }
     char timeStringBuff[50];
@@ -174,120 +216,136 @@ String getFormattedTime() {
 }
 
 /**
- * Generiert eine eindeutige Sensor-ID
- * @return Die eindeutige Sensor-ID als String
+ * Generates a unique sensor ID
+ * @return The unique sensor ID as a string
  */
-String getUniqueID() {
+String getUniqueID()
+{
     char uniqueID[UniqueIDsize * 2 + 1];
-    for (size_t i = 0; i < UniqueIDsize; i++) {
+    for (size_t i = 0; i < UniqueIDsize; i++)
+    {
         sprintf(uniqueID + i * 2, "%02X", UniqueID[i]);
     }
     return String(uniqueID);
 }
 
 /**
- * Führt eine HTTP/HTTPS-Anfrage durch
- * @param url Die URL der Anfrage
- * @param doc Das JSON-Dokument, das gesendet werden soll
- * @return Der HTTP-Antwortcode
+ * Performs an HTTP/HTTPS request
+ * @param url The URL of the request
+ * @param doc The JSON document to be sent
+ * @return The HTTP response code
  */
-int performHttpRequest(const String &url, StaticJsonDocument<200> &doc) {
+int performHttpRequest(const String &url, StaticJsonDocument<200> &doc)
+{
     HTTPClient http;
     WiFiClient *client;
     String urlString;
 
-    bool useHttps = (strlen(ROOT_CA) > 0 || strlen(FINGERPRINT) > 0);
+    bool useHttps = (strlen(fingerprint) > 0);
 
-    if (useHttps) {
+    if (useHttps)
+    {
         WiFiClientSecure *secureClient = new WiFiClientSecure;
-        if (strlen(ROOT_CA) > 0) {
-            BearSSL::X509List cert(ROOT_CA);
-            secureClient->setTrustAnchors(&cert);
-        } else if (strlen(FINGERPRINT) > 0) {
-            secureClient->setFingerprint(FINGERPRINT);
-        }
+        secureClient->setFingerprint(fingerprint);
         client = secureClient;
         urlString = "https://" + url;
-    } else {
-        client = new WiFiClient;
+    }
+    else
+    {
+        WiFiClient *regularClient = new WiFiClient;
+        client = regularClient;
         urlString = "http://" + url;
     }
 
     http.begin(*client, urlString);
-    http.addHeader("Content-Type", APPLICATION_JSON, true, true);
-    http.addHeader(API_KEY_HEADER_NAME, API_KEY, false, false);
+    http.addHeader("Content-Type", applicationJson, true, true);
+    http.addHeader(apiKeyHeaderName, apiKey, false, false);
 
     String payload;
     serializeJson(doc, payload);
 
     int httpResponseCode = http.POST(payload);
 
-    Serial.println("-- Endpunkt URL --");
-    Serial.println(urlString);
-    Serial.println("-- Payload --");
+    logMessage("-- Endpoint URL --\n" + urlString + "\n-- Payload --");
     serializeJsonPretty(doc, Serial);
-    Serial.println("\n-- Response --");
+    logMessage("\n-- Response --\n");
 
-    if (httpResponseCode > 0) {
+    if (httpResponseCode > 0)
+    {
         String response = http.getString();
-        Serial.print(httpResponseCode);
-        Serial.print(": ");
-        Serial.println(response);
-    } else {
-        Serial.print("Fehler beim Senden des POST: ");
-        Serial.println(httpResponseCode);
+        logMessage(String(httpResponseCode) + ": " + response);
+    }
+    else
+    {
+        logMessage("Error sending POST: " + String(httpResponseCode));
     }
 
-    Serial.println("");
-
+    logMessage("");
     http.end();
-    delete client;
     return httpResponseCode;
 }
 
 /**
- * Bestätigt die Sensorregistrierung
+ * Confirms sensor registration
  */
-void confirmSensorRegistration() {
-    if (WiFi.status() == WL_CONNECTED) {
+void confirmSensorRegistration()
+{
+    int sensorResult = 0;
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
         StaticJsonDocument<200> doc;
-        doc["username"] = USERNAME;
+        doc["username"] = username;
         doc["uuid"] = getUniqueID();
 
-        performHttpRequest(URL_REGISTER_SENSOR_CONFIRM, doc);
+        sensorResult = performHttpRequest(urlRegisterSensorConfirm, doc);
+    }
+
+    if (sensorResult == 200)
+    {
+        sensorRegistered = true;
     }
 }
 
 /**
- * Liest Sensordaten
+ * Reads sensor data
  */
-float readMQ2SensorData(MQUnifiedsensor &type) {
-    type.update(); // Update data, the arduino will read the voltage from the analog pin
-
-    return type.readSensor();
+float readMQ2SensorData(MQUnifiedsensor &sensor)
+{
+    sensor.update();
+    return sensor.readSensor();
 }
 
 /**
- * Sendet Sensordaten an den Server
+ * Sends sensor data to the server
  */
-void sendSensorData() {
+void sendSensorData()
+{
     SHT31D result = sht3xd.readTempAndHumidity(SHT3XD_REPEATABILITY_HIGH, SHT3XD_MODE_CLOCK_STRETCH, 60000);
     float temperature = result.t;
     float humidity = result.rh;
-    float voc = analogRead(A0); // MQ-2-Sensor ist an Serial-Port 0 angeschlossen
+    float voc = analogRead(A0); // MQ-2 sensor is connected to Serial Port 0
 
-    float h2 = readMQ2SensorData(MQ2_H2);
-    float lpg = readMQ2SensorData(MQ2_LPG);
-    float co = readMQ2SensorData(MQ2_CO);
-    float alcohol = readMQ2SensorData(MQ2_Alcohol);
-    float propane = readMQ2SensorData(MQ2_Propane);
+    // Calibrate each time to prevent extremely wrong values
+    calibrateMQ2Sensor(mq2H2, "MQ2_H2", MQ2_H2_A, MQ2_H2_B);
+    calibrateMQ2Sensor(mq2LPG, "MQ2_LPG", MQ2_LPG_A, MQ2_LPG_B);
+    calibrateMQ2Sensor(mq2CO, "MQ2_CO", MQ2_CO_A, MQ2_CO_B);
+    calibrateMQ2Sensor(mq2Alcohol, "MQ2_Alcohol", MQ2_ALCOHOL_A, MQ2_ALCOHOL_B);
+    calibrateMQ2Sensor(mq2Propane, "MQ2_Propane", MQ2_PROPANE_A, MQ2_PROPANE_B);
+
+    float h2 = readMQ2SensorData(mq2H2);
+    float lpg = readMQ2SensorData(mq2LPG);
+    float co = readMQ2SensorData(mq2CO);
+    float alcohol = readMQ2SensorData(mq2Alcohol);
+    float propane = readMQ2SensorData(mq2Propane);
 
     String timestamp = getFormattedTime();
     String uniqueID = getUniqueID();
 
-    Serial.println("Current Sensor Data (" + String(uniqueID) + " - " + String(timestamp) + ") -> Temperature: " + String(temperature, 1) + ", Humidity: " + String(humidity, 1) +
-                   ", VOC: " + String(voc, 1) + ", H2: " + String(h2, 1) + ", LPG: " + String(lpg, 1) + ", CO: " + String(co, 1) +
-                   ", Alcohol: " + String(alcohol, 1) + ", Propane: " + String(propane, 1));
+    logMessage("Current Sensor Data (" + uniqueID + " - " + timestamp +
+                   ") -> Temperature: " + String(temperature, 1) + ", Humidity: " + String(humidity, 1) +
+                   ", VOC: " + String(voc, 1) + ", H2: " + String(h2, 1) + ", LPG: " + String(lpg, 1) +
+                   ", CO: " + String(co, 1) + ", Alcohol: " + String(alcohol, 1) + ", Propane: " + String(propane, 1));
 
     StaticJsonDocument<200> doc;
     doc["base"] = "AZEnvy";
@@ -309,7 +367,7 @@ void sendSensorData() {
     JsonObject vocJson = measurements.createNestedObject();
     vocJson["type"] = "VOC";
     vocJson["value"] = voc;
-    vocJson["unit"] = "PPM";
+    vocJson["unit"] = "PPB";
 
     JsonObject h2Json = measurements.createNestedObject();
     h2Json["type"] = "H2";
@@ -336,46 +394,54 @@ void sendSensorData() {
     propaneJson["value"] = propane;
     propaneJson["unit"] = "PPM";
 
-    performHttpRequest(URL_MEASUREMENTS, doc);
+    performHttpRequest(urlMeasurements, doc);
 }
 
 /**
- * Initialisiert das Gerät
+ * Initializes the device
  */
-void setup() {
+void setup()
+{
     Serial.begin(115200);
     Wire.begin();
     sht3xd.begin(0x44);
 
+    pinMode(wpsButton, INPUT_PULLUP); // Enable button input
+
     connectToWiFi();
 
-    calibrateMQ2Sensor(MQ2_H2, "MQ2_H2", 987.99, -2.162);
-    calibrateMQ2Sensor(MQ2_LPG, "MQ2_LPG", 574.25, -2.222);
-    calibrateMQ2Sensor(MQ2_CO, "MQ2_CO", 36974, -3.109);
-    calibrateMQ2Sensor(MQ2_Alcohol, "MQ2_Alcohol", 3616.1, -2.675);
-    calibrateMQ2Sensor(MQ2_Propane, "MQ2_Propane", 658.71, -2.168);
+    if (WiFi.status() == WL_CONNECTED) {
+        confirmSensorRegistration();
 
-    confirmSensorRegistration(); // Bestätige die Registrierung des Sensors nach der WiFi-Verbindung
+        if (sensorRegistered)
+        {
+            sendSensorData();
+        }
+    }
 }
 
 /**
- * Hauptschleife des Programms
+ * Main program loop
  */
-void loop() {
+void loop()
+{
     unsigned long currentMillis = millis();
 
-    // Überprüfe die WiFi-Verbindung alle 30 Sekunden und verbinde erneut, falls getrennt
-    if ((WiFi.status() != WL_CONNECTED) && (currentMillis - previousMillis >= interval)) {
-        Serial.print(millis());
-        Serial.println("Stelle WiFi - Verbindung wieder her...");
-        WiFi.disconnect();
-        WiFi.reconnect();
-        previousMillis = currentMillis;
+    if ((currentMillis - initialMillis >= sendSensorDataInterval) && (WiFi.status() == WL_CONNECTED))
+    {
+        if (!sensorRegistered) {
+            confirmSensorRegistration(); // Confirm sensor registration after WiFi connection
+        } else {
+            sendSensorData();
+        }
+        initialMillis = currentMillis;
     }
 
-    // Sende alle 60 Sekunden Sensor-Daten
-    if ((WiFi.status() == WL_CONNECTED) && (currentMillis - previousMillis >= send_sensor_data_interval)) {
-        sendSensorData();
-        previousMillis = currentMillis;
+    // Check the WiFi connection every 30 seconds and reconnect if disconnected
+    if ((WiFi.status() != WL_CONNECTED) && (currentMillis - initialMillis >= interval))
+    {
+        logMessage(String(millis()) + ": Reconnecting to WiFi...");
+        reconnectWiFi();
+        initialMillis = currentMillis;
     }
 }
