@@ -25,8 +25,8 @@ const char *apiKeyHeaderName = "X-API-KEY"; // Name of the API key header
 bool sensorRegistered = false;
 
 /*** Timing Configuration ***/
-unsigned long initialMillis = millis();   // Initial time
-const int interval = 30000;                     // Interval for checking WiFi connection (30 seconds)
+unsigned long initialMillis = millis();         // Initial time
+const int wifiCheckInterval = 30000;            // Interval for checking WiFi connection (30 seconds)
 const int sendSensorDataInterval = 60000;       // Interval for sending sensor data (60 seconds)
 const int maxConnectAttempts = 60;
 
@@ -441,7 +441,7 @@ void loop()
     }
 
     // Check the WiFi connection every 30 seconds and reconnect if disconnected
-    if ((WiFi.status() != WL_CONNECTED) && (currentMillis - initialMillis >= interval))
+    if ((WiFi.status() != WL_CONNECTED) && (currentMillis - initialMillis >= wifiCheckInterval))
     {
         logMessage(String(millis()) + ": Reconnecting to WiFi...");
         reconnectWiFi();
